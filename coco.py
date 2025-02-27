@@ -1,17 +1,11 @@
 from ultralytics import YOLO
 import yaml
 import cv2
-import pyttsx3
 import threading
 import os
 from datetime import datetime
 
-def text_to_speech(frame):
-    # Initialize text-to-speech engine and announce detection.
-    engine = pyttsx3.init()
-    engine.say('Immature')  # Change this message as needed (e.g. "Mature Coconut" or "Immature Coconut")
-    engine.runAndWait()
-
+def save_image(frame):
     # Save the frame as an image with a timestamp.
     save_path = 'CoconutDetection Pictures'  # Change folder name as desired.
     if not os.path.exists(save_path):
@@ -67,8 +61,8 @@ while True:
                 cv2.rectangle(frame, (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3])), (0, 255, 0), 2)
                 cv2.putText(frame, f'{class_name} {confidence:.2f}', (int(xyxy[0]), int(xyxy[1])),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                # Launch TTS and image saving in a separate thread.
-                threading.Thread(target=text_to_speech, args=(frame.copy(),), daemon=True).start()
+                # Launch image saving in a separate thread.
+                threading.Thread(target=save_image, args=(frame.copy(),), daemon=True).start()
 
     cv2.imshow('Coconut Detection', frame)
     key = cv2.waitKey(1)
