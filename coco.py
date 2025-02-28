@@ -1,13 +1,18 @@
-from ultralytics import YOLO
+import torch
 import yaml
 import cv2
 import threading
 import os
 from datetime import datetime
+import pathlib
+
+# Patch for Windows to handle PosixPath issue
+temp = pathlib.PosixPath
+pathlib.PosixPath = pathlib.WindowsPath
 
 def save_image(frame):
     # Save the frame as an image with a timestamp.
-    save_path = 'CoconutDetection Pictures'  # Change folder name as desired.
+    save_path = 'CoconutDetection Pictures'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -16,12 +21,12 @@ def save_image(frame):
     cv2.imwrite(image_path, frame)
     print(f"Image saved: {image_path}")
 
-# Load your custom model using the ultralytics YOLOv8 API.
-# Replace the path below with your actual model file.
-model = YOLO(r'best1.pt')
+# Load YOLOv5 model using torch.hub with force_reload=True to refresh cache
+model = torch.hub.load('ultralytics/yolov5', 'custom', 
+                       path=r'C:\Users\sayan\Downloads\coco\AIYolov5\content\yolov5\runs\train\yolov5s_results\weights\best.pt', 
+                       force_reload=True)
 
 # Attempt to load custom class names from a YAML file.
-# If not found, fallback to model.names.
 yaml_path = 'AIYolov5/data.yaml'
 if os.path.exists(yaml_path):
     with open(yaml_path, 'r') as f:
@@ -30,7 +35,8 @@ if os.path.exists(yaml_path):
     print(f"Loaded custom class names from {yaml_path}")
 else:
     print(f"YAML file not found at {yaml_path}. Using default model class names.")
-    classes = model.names
+    # YOLOv5 typically stores class names in model.names.
+    classes = model.names if hasattr(model, 'names') else []
 
 # Initialize video capture.
 cap = cv2.VideoCapture(0)
@@ -43,26 +49,21 @@ while True:
         print("Failed to grab frame")
         break
 
-    # Run inference using the YOLOv8 model.
-    # model(frame) returns a list of results (one per image).
+    # Run inference on the frame.
     results = model(frame)
-    if results:
-        # Use the first result.
-        result = results[0]
-        # YOLOv8 result boxes can be accessed via result.boxes.
-        for box in result.boxes:
-            # box.xyxy is a tensor with coordinates [x1, y1, x2, y2]
-            xyxy = box.xyxy.cpu().numpy()[0]
-            confidence = box.conf.cpu().numpy()[0]
-            cls = int(box.cls.cpu().numpy()[0])
-            if confidence > 0.67:
-                # Use custom class names if available.
-                class_name = classes[cls] if cls < len(classes) else str(cls)
-                cv2.rectangle(frame, (int(xyxy[0]), int(xyxy[1])), (int(xyxy[2]), int(xyxy[3])), (0, 255, 0), 2)
-                cv2.putText(frame, f'{class_name} {confidence:.2f}', (int(xyxy[0]), int(xyxy[1])),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
-                # Launch image saving in a separate thread.
-                threading.Thread(target=save_image, args=(frame.copy(),), daemon=True).start()
+    # results.xyxy[0] contains a tensor with detections: [x1, y1, x2, y2, confidence, class]
+    detections = results.xyxy[0].cpu().numpy()  # Convert to NumPy array
+
+    for detection in detections:
+        x1, y1, x2, y2, conf, cls = detection
+        if conf > 0.67:
+            class_idx = int(cls)
+            class_name = classes[class_idx] if class_idx < len(classes) else str(class_idx)
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            cv2.putText(frame, f'{class_name} {conf:.2f}', (int(x1), int(y1)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+            # Save image asynchronously.
+            threading.Thread(target=save_image, args=(frame.copy(),), daemon=True).start()
 
     cv2.imshow('Coconut Detection', frame)
     key = cv2.waitKey(1)
